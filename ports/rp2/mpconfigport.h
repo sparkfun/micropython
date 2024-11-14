@@ -71,8 +71,19 @@
 #define MICROPY_CONFIG_ROM_LEVEL                (MICROPY_CONFIG_ROM_LEVEL_EXTRA_FEATURES)
 #endif
 
+#ifndef MICROPY_HW_ENABLE_PSRAM
+#define MICROPY_HW_ENABLE_PSRAM (0)
+#endif
+
 // Memory allocation policies
+#if MICROPY_HW_ENABLE_PSRAM
+#define MICROPY_GC_STACK_ENTRY_TYPE             uint32_t
+#else
 #define MICROPY_GC_STACK_ENTRY_TYPE             uint16_t
+#endif
+#ifndef MICROPY_GC_SPLIT_HEAP
+#define MICROPY_GC_SPLIT_HEAP                   (0) // whether PSRAM is added to or replaces the heap
+#endif
 #define MICROPY_ALLOC_PATH_MAX                  (128)
 #define MICROPY_QSTR_BYTES_IN_HASH              (1)
 
@@ -223,6 +234,10 @@ extern const struct _mp_obj_type_t mp_network_cyw43_type;
     { MP_ROM_QSTR(MP_QSTR_STAT_NO_AP_FOUND), MP_ROM_INT(CYW43_LINK_NONET) }, \
     { MP_ROM_QSTR(MP_QSTR_STAT_CONNECT_FAIL), MP_ROM_INT(CYW43_LINK_FAIL) }, \
     { MP_ROM_QSTR(MP_QSTR_STAT_GOT_IP), MP_ROM_INT(CYW43_LINK_UP) },
+
+// Override network_cyw43_make_new
+#define MICROPY_PY_NETWORK_CYW43_MAKE_NEW rp2_network_cyw43_make_new
+
 #else
 #define MICROPY_HW_NIC_CYW43
 #endif

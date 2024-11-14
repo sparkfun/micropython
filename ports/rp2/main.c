@@ -26,6 +26,8 @@
 
 #include <stdio.h>
 
+#include "rp2_psram.h"
+#include "rp2_flash.h"
 #include "py/compile.h"
 #include "py/cstack.h"
 #include "py/runtime.h"
@@ -49,14 +51,10 @@
 
 #include "pico/stdlib.h"
 #include "pico/binary_info.h"
-#include "pico/unique_id.h"
 #include "hardware/structs/rosc.h"
 #if MICROPY_PY_LWIP
 #include "lwip/init.h"
 #include "lwip/apps/mdns.h"
-#endif
-#if MICROPY_PY_NETWORK_CYW43
-#include "lib/cyw43-driver/src/cyw43.h"
 #endif
 #if PICO_RP2040
 #include "RP2040.h" // cmsis, for PendSV_IRQn and SCB/SCB_SCR_SEVONPEND_Msk
@@ -84,6 +82,10 @@ int main(int argc, char **argv) {
     SCB->SCR |= SCB_SCR_SEVONPEND_Msk;
     #endif
 
+    #if defined(MICROPY_HW_PSRAM_CS_PIN) && MICROPY_HW_ENABLE_PSRAM
+    size_t psram_size = psram_init(MICROPY_HW_PSRAM_CS_PIN);
+    #endif
+
     pendsv_init();
     soft_timer_init();
 
@@ -92,6 +94,9 @@ int main(int argc, char **argv) {
 
     // Hook for setting up anything that needs to be super early in the bootup process.
     MICROPY_BOARD_STARTUP();
+
+    // Set the flash divisor to an appropriate value
+    rp2_flash_set_timing();
 
     #if MICROPY_HW_ENABLE_UART_REPL
     bi_decl(bi_program_feature("UART REPL"))
@@ -120,7 +125,21 @@ int main(int argc, char **argv) {
 
     // Initialise stack extents and GC heap.
     mp_cstack_init_with_top(&__StackTop, &__StackTop - &__StackBottom);
+
+    #if defined(MICROPY_HW_PSRAM_CS_PIN) && MICROPY_HW_ENABLE_PSRAM
+    if (psram_size) {
+        #if MICROPY_GC_SPLIT_HEAP
+        gc_init(&__GcHeapStart, &__GcHeapEnd);
+        gc_add((void *)PSRAM_LOCATION, (void *)(PSRAM_LOCATION + psram_size));
+        #else
+        gc_init((void *)PSRAM_LOCATION, (void *)(PSRAM_LOCATION + psram_size));
+        #endif
+    } else {
+        gc_init(&__GcHeapStart, &__GcHeapEnd);
+    }
+    #else
     gc_init(&__GcHeapStart, &__GcHeapEnd);
+    #endif
 
     #if MICROPY_PY_LWIP
     // lwIP doesn't allow to reinitialise itself by subsequent calls to this function
@@ -130,28 +149,6 @@ int main(int argc, char **argv) {
     #if LWIP_MDNS_RESPONDER
     mdns_resp_init();
     #endif
-    #endif
-
-    #if MICROPY_PY_NETWORK_CYW43 || MICROPY_PY_BLUETOOTH_CYW43
-    {
-        cyw43_init(&cyw43_state);
-        cyw43_irq_init();
-        cyw43_post_poll_hook(); // enable the irq
-        uint8_t buf[8];
-        memcpy(&buf[0], "PICO", 4);
-
-        // MAC isn't loaded from OTP yet, so use unique id to generate the default AP ssid.
-        const char hexchr[16] = "0123456789ABCDEF";
-        pico_unique_board_id_t pid;
-        pico_get_unique_board_id(&pid);
-        buf[4] = hexchr[pid.id[7] >> 4];
-        buf[5] = hexchr[pid.id[6] & 0xf];
-        buf[6] = hexchr[pid.id[5] >> 4];
-        buf[7] = hexchr[pid.id[4] & 0xf];
-        cyw43_wifi_ap_set_ssid(&cyw43_state, 8, buf);
-        cyw43_wifi_ap_set_auth(&cyw43_state, CYW43_AUTH_WPA2_AES_PSK);
-        cyw43_wifi_ap_set_password(&cyw43_state, 8, (const uint8_t *)"picoW123");
-    }
     #endif
 
     // Hook for setting up anything that can wait until after other hardware features are initialised.

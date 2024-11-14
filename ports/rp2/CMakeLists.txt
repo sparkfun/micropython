@@ -173,6 +173,12 @@ set(MICROPY_SOURCE_PORT
     ${CMAKE_BINARY_DIR}/pins_${MICROPY_BOARD}.c
 )
 
+if(PICO_RP2350)
+    list(APPEND MICROPY_SOURCE_PORT
+        rp2_psram.c
+    )
+endif()
+
 set(MICROPY_SOURCE_QSTR
     ${MICROPY_SOURCE_PY}
     ${MICROPY_DIR}/shared/readline/readline.c
@@ -195,7 +201,14 @@ set(MICROPY_SOURCE_QSTR
     ${CMAKE_BINARY_DIR}/pins_${MICROPY_BOARD}.c
 )
 
+if (MICROPY_PY_NETWORK_CYW43)
+    list(APPEND MICROPY_SOURCE_QSTR
+        ${MICROPY_PORT_DIR}/rp2_network_cyw43.c
+    )
+endif()
+
 set(PICO_SDK_COMPONENTS
+    boot_bootrom_headers
     hardware_adc
     hardware_base
     hardware_boot_lock
@@ -222,6 +235,7 @@ set(PICO_SDK_COMPONENTS
     pico_base_headers
     pico_binary_info
     pico_bootrom
+    pico_flash
     pico_multicore
     pico_platform
     pico_platform_compiler
@@ -401,6 +415,7 @@ if (MICROPY_PY_NETWORK_CYW43)
 
     list(APPEND MICROPY_SOURCE_PORT
         machine_pin_cyw43.c
+        rp2_network_cyw43.c
     )
 
     target_link_libraries(${MICROPY_TARGET}
@@ -631,8 +646,12 @@ if(NOT PICO_NUM_EXT_GPIOS)
     set(PICO_NUM_EXT_GPIOS 10)
 endif()
 
-if(EXISTS "${MICROPY_BOARD_DIR}/pins.csv")
-    set(GEN_PINS_BOARD_CSV "${MICROPY_BOARD_DIR}/pins.csv")
+if (NOT PICO_PINS_CSV_NAME)
+    set(PICO_PINS_CSV_NAME pins.csv)
+endif()
+
+if(EXISTS "${MICROPY_BOARD_DIR}/${PICO_PINS_CSV_NAME}")
+    set(GEN_PINS_BOARD_CSV "${MICROPY_BOARD_DIR}/${PICO_PINS_CSV_NAME}")
     set(GEN_PINS_CSV_ARG --board-csv "${GEN_PINS_BOARD_CSV}")
 endif()
 

@@ -31,6 +31,8 @@
 #include "mp_usbd.h"
 #include "modmachine.h"
 #include "uart.h"
+#include "rp2_psram.h"
+#include "rp2_flash.h"
 #include "clocks_extra.h"
 #include "hardware/pll.h"
 #include "hardware/structs/rosc.h"
@@ -94,6 +96,11 @@ static mp_obj_t mp_machine_get_freq(void) {
 
 static void mp_machine_set_freq(size_t n_args, const mp_obj_t *args) {
     mp_int_t freq = mp_obj_get_int(args[0]);
+
+    // If necessary, increase the flash divider before increasing the clock speed
+    const int old_freq = clock_get_hz(clk_sys);
+    rp2_flash_set_timing_for_freq(MAX(freq, old_freq));
+
     if (!set_sys_clock_khz(freq / 1000, false)) {
         mp_raise_ValueError(MP_ERROR_TEXT("cannot change frequency"));
     }
@@ -111,14 +118,26 @@ static void mp_machine_set_freq(size_t n_args, const mp_obj_t *args) {
             }
         }
     }
+
+    // If clock speed was reduced, maybe we can reduce the flash divider
+    if (freq < old_freq) {
+        rp2_flash_set_timing_for_freq(freq);
+    }
+
     #if MICROPY_HW_ENABLE_UART_REPL
     setup_default_uart();
     mp_uart_init();
+    #endif
+    #if defined(MICROPY_HW_PSRAM_CS_PIN) && MICROPY_HW_ENABLE_PSRAM
+    psram_init(MICROPY_HW_PSRAM_CS_PIN);
     #endif
 }
 
 static void mp_machine_idle(void) {
     MICROPY_INTERNAL_WFE(1);
+}
+
+static void alarm_sleep_callback(uint alarm_id) {
 }
 
 static void mp_machine_lightsleep(size_t n_args, const mp_obj_t *args) {
@@ -190,22 +209,15 @@ static void mp_machine_lightsleep(size_t n_args, const mp_obj_t *args) {
     // Disable ROSC.
     rosc_hw->ctrl = ROSC_CTRL_ENABLE_VALUE_DISABLE << ROSC_CTRL_ENABLE_LSB;
 
+    int alarm_num = 2;
     if (n_args == 0) {
         #if MICROPY_PY_NETWORK_CYW43
         gpio_set_dormant_irq_enabled(CYW43_PIN_WL_HOST_WAKE, GPIO_IRQ_LEVEL_HIGH, true);
         #endif
         xosc_dormant();
     } else {
-        bool timer3_enabled = irq_is_enabled(3);
-
-        const uint32_t alarm_num = 3;
-        const uint32_t irq_num = TIMER_ALARM_IRQ_NUM(timer_hw, alarm_num);
+        hardware_alarm_claim(alarm_num);
         if (use_timer_alarm) {
-            // Make sure ALARM3/IRQ3 is enabled on _this_ core
-            if (!timer3_enabled) {
-                irq_set_enabled(irq_num, true);
-            }
-            hw_set_bits(&timer_hw->inte, 1u << alarm_num);
             // Use timer alarm to wake.
             clocks_hw->sleep_en0 = 0x0;
             #if PICO_RP2040
@@ -215,8 +227,12 @@ static void mp_machine_lightsleep(size_t n_args, const mp_obj_t *args) {
             #else
             #error Unknown processor
             #endif
-            timer_hw->intr = 1u << alarm_num; // clear any IRQ
-            timer_hw->alarm[alarm_num] = timer_hw->timerawl + delay_ms * 1000;
+            hardware_alarm_set_callback(alarm_num, alarm_sleep_callback);
+            if (hardware_alarm_set_target(alarm_num, make_timeout_time_ms(delay_ms))) {
+                hardware_alarm_set_callback(alarm_num, NULL);
+                hardware_alarm_unclaim(alarm_num);
+                alarm_num = -1;
+            }
         } else {
             // TODO: Use RTC alarm to wake.
             clocks_hw->sleep_en0 = 0x0;
@@ -228,7 +244,7 @@ static void mp_machine_lightsleep(size_t n_args, const mp_obj_t *args) {
             #if PICO_RP2040
             clocks_hw->sleep_en1 |= CLOCKS_SLEEP_EN1_CLK_USB_USBCTRL_BITS;
             #elif PICO_RP2350
-            clocks_hw->sleep_en1 |= CLOCKS_SLEEP_EN1_CLK_SYS_USBCTRL_BITS;
+            clocks_hw->sleep_en1 |= CLOCKS_SLEEP_EN1_CLK_USB_BITS;
             #else
             #error Unknown processor
             #endif
@@ -246,11 +262,10 @@ static void mp_machine_lightsleep(size_t n_args, const mp_obj_t *args) {
         #endif
 
         // Go into low-power mode.
-        __wfi();
-
-        if (!timer3_enabled) {
-            irq_set_enabled(irq_num, false);
+        if (alarm_num >= 0) {
+            __wfi();
         }
+
         clocks_hw->sleep_en0 |= ~(0u);
         clocks_hw->sleep_en1 |= ~(0u);
     }
@@ -264,6 +279,11 @@ static void mp_machine_lightsleep(size_t n_args, const mp_obj_t *args) {
 
     // Re-sync mp_hal_time_ns() counter with aon timer.
     mp_hal_time_ns_set_from_rtc();
+    if (alarm_num >= 0) {
+        hardware_alarm_cancel(alarm_num);
+        hardware_alarm_set_callback(alarm_num, NULL);
+        hardware_alarm_unclaim(alarm_num);
+    }
 }
 
 NORETURN static void mp_machine_deepsleep(size_t n_args, const mp_obj_t *args) {
