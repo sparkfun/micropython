@@ -415,11 +415,7 @@ if (MICROPY_PY_NETWORK_CYW43)
 
     list(APPEND MICROPY_SOURCE_PORT
         machine_pin_cyw43.c
-<<<<<<< HEAD
-        rp2_network_cyw43.c
-=======
         rp2_init_cyw43.c
->>>>>>> pico2_w_changes
     )
 
     target_link_libraries(${MICROPY_TARGET}
