@@ -203,7 +203,7 @@ set(MICROPY_SOURCE_QSTR
 
 if (MICROPY_PY_NETWORK_CYW43)
     list(APPEND MICROPY_SOURCE_QSTR
-        ${MICROPY_PORT_DIR}/rp2_network_cyw43.c
+        ${MICROPY_PORT_DIR}/rp2_init_cyw43.c
     )
 endif()
 
@@ -415,12 +415,15 @@ if (MICROPY_PY_NETWORK_CYW43)
 
     list(APPEND MICROPY_SOURCE_PORT
         machine_pin_cyw43.c
+<<<<<<< HEAD
         rp2_network_cyw43.c
+=======
+        rp2_init_cyw43.c
+>>>>>>> pico2_w_changes
     )
 
     target_link_libraries(${MICROPY_TARGET}
         cyw43_driver_picow
-        cmsis_core
     )
     target_include_directories(${MICROPY_TARGET} PRIVATE
         ${MICROPY_DIR}/lib/cyw43-driver/
