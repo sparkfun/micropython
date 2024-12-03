@@ -33,5 +33,7 @@
 
 #define MICROPY_HW_PSRAM_CS_PIN (8)
 #define MICROPY_HW_ENABLE_PSRAM (1)
+#define MICROPY_GC_SPLIT_HEAP (1)
+#define MICROPY_ALLOC_GC_STACK_SIZE (1024)
 
 #include "enable_cyw43.h"
