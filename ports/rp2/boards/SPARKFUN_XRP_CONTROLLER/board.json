@@ -7,17 +7,19 @@
         "BLE",
         "Dual-core",
         "External Flash",
+        "External RAM",
         "IMU",
         "JST-SH",
-        "USB",
+        "RGB LED",
+        "USB-C",
         "WiFi"
     ],
     "images": [
-        "22727-_01.jpg"
+        "26619-XRP-Controller-Board-Feature.jpg"
     ],
-    "mcu": "rp2040",
-    "product": "XRP Controller (Beta)",
+    "mcu": "rp2350",
+    "product": "XRP Controller",
     "thumbnail": "",
-    "url": "https://www.sparkfun.com/sparkfun-experiential-robotics-platform-xrp-controller-beta.html",
+    "url": "https://www.sparkfun.com/sparkfun-experiential-robotics-platform-xrp-controller.html",
     "vendor": "Sparkfun"
 }
