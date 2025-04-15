@@ -19,9 +19,10 @@ function download_qwiic_release {
 # Builds all SparkFun boards for the given port
 # Options:
     # $1: Port name
+    # $2: [Optional] Prefix for the SparkFun board directories for port(default: "-SPARKFUN_")
 function build_for_port {
     local TARGET_PORT_NAME=$1
-    local SPARKFUN_PREFIX="SPARKFUN_"
+    local SPARKFUN_PREFIX=${2:-SPARKFUN_}
     local SPARKFUN_BOARD_PREFIX="ports/${TARGET_PORT_NAME}/boards/${SPARKFUN_PREFIX}*"
 
     for board in $SPARKFUN_BOARD_PREFIX; do
@@ -56,6 +57,17 @@ function build_all_sparkfun_boards_esp32 {
     build_for_port "esp32"
 }
 
+# Builds all Teensy mimxrt boards
+# Options:
+    # $1: Whether to build the cross compiler
+function build_all_sparkfun_boards_mimxrt {
+    if $1; then
+        make ${MAKEOPTS} -C mpy-cross
+    fi
+
+    build_for_port "mimxrt" "TEENSY"
+}
+
 # Copies all files with the given prefix from the SparkFun build directories to the output directory
 # Options:
     # $1: Output directory
@@ -64,6 +76,7 @@ function build_all_sparkfun_boards_esp32 {
     # $4: File basename
     # $5: Extension
     # $6: Prefix to put on output files
+    # $7: [Optional] Convert file to hex (default: false)
 function copy_all_for_prefix {
     local OUT_DIRECTORY=$1
     local PORT_DIRECTORY=$2 # The directory where the ports are located (e.g. ports/rp2)
@@ -71,12 +84,25 @@ function copy_all_for_prefix {
     local FILE_BASENAME=$4 # the target base name of the file to copy from each SparkFun build directory (e.g. firmware)
     local EXTENSION=$5 # The extension of the file to copy (e.g. uf2)
     local OUTPUT_PREFIX=$6 # The prefix to put on the output files (e.g. MICROPYTHON_ or MINIMAL_MICROPYTHON_)
+    local CONVERT_TO_HEX=${7:-false} # Whether to convert the file to hex (default: false)
+
     
     mkdir -p ${OUT_DIRECTORY}
 
     for file in $(find ${PORT_DIRECTORY} -wholename "*${BUILD_PREFIX}*/*${FILE_BASENAME}.${EXTENSION}"); do
         echo "Moving $file to ${OUT_DIRECTORY}"
-        mv $file ${OUT_DIRECTORY}/${OUTPUT_PREFIX}$(echo $file | sed -n "s/.*${BUILD_PREFIX}\([^/]*\)\/${FILE_BASENAME}.${EXTENSION}/\1/p").${EXTENSION}
+        # First, add the check to see if we need to convert the file to hex
+        if $CONVERT_TO_HEX; then
+            echo "Converting $file to hex"
+            # Convert the file to hex using hex using the command objcopy -O ihex <file> <output_file>
+            # We need to get the output file name from the input file name
+            OUTPUT_FILE=${OUT_DIRECTORY}/${OUTPUT_PREFIX}$(echo $file | sed -n "s/.*${BUILD_PREFIX}\([^/]*\)\/${FILE_BASENAME}.${EXTENSION}/\1/p").hex
+            # Use objcopy to convert the file to hex and move it to the output directory (maybe unnecessary if the .hex file is already available from the build)
+            objcopy -O ihex $file $OUTPUT_FILE
+        else
+            # Just move the file without converting it
+            mv $file ${OUT_DIRECTORY}/${OUTPUT_PREFIX}$(echo $file | sed -n "s/.*${BUILD_PREFIX}\([^/]*\)\/${FILE_BASENAME}.${EXTENSION}/\1/p").${EXTENSION}
+        fi
     done
 }
 
@@ -117,19 +143,32 @@ function copy_all_for_prefix_esp32 {
     # $1: Qwiic directory
     # $2: BOARD directory
     # $3: Board prefix
+    # $4: The file to add the frozen manifest line to (e.g. mpconfigboard.cmake or mpconfigboard.mk.) Default: mpconfigboard.cmake
 function add_qwiic_manifest {
     local QWIIC_DIRECTORY=$1 # The directory where the Qwiic drivers are located to be frozen
     local BOARD_DIRECTORY=$2 # The directory where the boards are located (e.g. ports/rp2/boards)
     local BOARD_PREFIX=$3 # The prefix of the SparkFun board directories (e.g. SPARKFUN_)
+    local MPCONFIG_FILE="${4:-mpconfigboard.cmake}" # The file to add the frozen manifest line to (e.g. mpconfigboard.cmake or mpconfigboard.mk. )
 
     for board in $(find ${BOARD_DIRECTORY} -type d -name "${BOARD_PREFIX}*"); do
+        echo "Adding Qwiic drivers to manifest.py for $board"
         if [ ! -f ${board}/manifest.py ]; then
             echo "Creating manifest.py for $board"
             echo "include(\"\$(PORT_DIR)/boards/manifest.py\")" > ${board}/manifest.py
 
             # also add the necessary frozen manifest line to mpconfigboard.cmake: set(MICROPY_FROZEN_MANIFEST ${MICROPY_BOARD_DIR}/manifest.py)
-            echo "Adding frozen manifest line to mpconfigboard.cmake for $board"
-            printf "\nset(MICROPY_FROZEN_MANIFEST \"\${MICROPY_BOARD_DIR}/manifest.py\")" >> ${board}/mpconfigboard.cmake
+            # We will use the optional MPCONFIG_FILE argument to determine if we should add this line
+
+            if [ -n "$MPCONFIG_FILE" ]; then
+                if [[ $MPCONFIG_FILE == *.mk ]]; then
+                    # For TEENSY which use mpconfigboard.mk instead of mpconfigboard.cmake
+                    echo "Adding frozen manifest line to mpconfigboard.mk for $board"
+                    printf "\nFROZEN_MANIFEST ?= \$(BOARD_DIR)/manifest.py" >> ${board}/mpconfigboard.mk
+                elif [[ $MPCONFIG_FILE == *.cmake ]]; then
+                    echo "Adding frozen manifest line to mpconfigboard.cmake for $board"
+                    printf "\nset(MICROPY_FROZEN_MANIFEST \"\${MICROPY_BOARD_DIR}/manifest.py\")" >> ${board}/mpconfigboard.cmake
+                fi
+            fi
         fi
 
         echo "Adding freeze line to manifest.py for $board"
@@ -174,11 +213,17 @@ function build_sparkfun {
     # Perform minimal build for RP2
     build_all_sparkfun_boards_rp2 false
 
+    # Perform minimal build for mimxrt
+    build_all_sparkfun_boards_mimxrt false
+
     # Copy all esp32 binary files to the output directory
     copy_all_for_prefix_esp32 ${OUTPUT_DIRECTORY} "ports/esp32" "build-SPARKFUN_" "MINIMAL_${OUTPUT_FILE_PREFIX}"
 
     # Copy all rp2 binary files to the output directory
     copy_all_for_prefix ${OUTPUT_DIRECTORY} "ports/rp2" "build-SPARKFUN_" "firmware" "uf2" "MINIMAL_${OUTPUT_FILE_PREFIX}"
+
+    # Copy all mimxrt teensy binary files to the output directory
+    copy_all_for_prefix ${OUTPUT_DIRECTORY} "ports/mimxrt" "build-TEENSY" "firmware" "elf" "MINIMAL_${OUTPUT_FILE_PREFIX}TEENSY_" true
 
     echo "Downloading Qwiic library and adding to manifest.py for SparkFun boards"
     # Perform Qwiic download 
@@ -190,8 +235,12 @@ function build_sparkfun {
 
     # Add the downloaded Qwiic drivers to the manifest.py for each rp2 board
     add_qwiic_manifest "../../../../${QWIIC_DIRECTORY}" "ports/rp2/boards" "SPARKFUN_"
+
+    # Add the downloaded Qwiic drivers to the manifest.py for each mimxrt teensy board (this might not work because they might lose their 40 vs. 41 when added)
+    add_qwiic_manifest "../../../../${QWIIC_DIRECTORY}" "ports/mimxrt/boards" "TEENSY40" "mpconfigboard.mk"
+    add_qwiic_manifest "../../../../${QWIIC_DIRECTORY}" "ports/mimxrt/boards" "TEENSY41" "" # We don't need to add the frozen manifest line to mpconfigboard.mk for TEENSY41, it is already there
     
-    echo "Performing full SparkFun build for ESP32 and RP2"
+    echo "Performing full SparkFun build for ESP32, RP2, and mimxrt"
     
     # Perform Qwiic Build for ESP32
     build_all_sparkfun_boards_esp32 false
@@ -199,9 +248,16 @@ function build_sparkfun {
     # Perform Qwiic Build for RP2
     build_all_sparkfun_boards_rp2 false
 
+    # Perform Qwiic build for mimxrt
+    build_all_sparkfun_boards_mimxrt false
+
     # Copy all esp32 binary files to the output directory
     copy_all_for_prefix_esp32 ${OUTPUT_DIRECTORY} "ports/esp32" "build-SPARKFUN_" ${OUTPUT_FILE_PREFIX}
 
     # Copy all rp2 binary files to the output directory
     copy_all_for_prefix ${OUTPUT_DIRECTORY} "ports/rp2" "build-SPARKFUN_" "firmware" "uf2" ${OUTPUT_FILE_PREFIX}
+
+    # Copy all mimxrt teensy binary files to the output directory
+    copy_all_for_prefix ${OUTPUT_DIRECTORY} "ports/mimxrt" "build-TEENSY" "firmware" "elf" "${OUTPUT_FILE_PREFIX}TEENSY_" true
 }
+

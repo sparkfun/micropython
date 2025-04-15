@@ -20,6 +20,8 @@ jobs:
         path: 'micropython repo'
     - name: Install RP2 package
       run: source tools/ci.sh && ci_rp2_setup
+    # - name: Install mimxrt package # Currently redundant since it does the same arm setup as rp2, but in future if these diverge, uncomment this...
+    #   run: source tools/ci.sh && ci_mimxrt_setup
     - id: idf_ver
       name: Read the ESP-IDF version (including Python version)
       run: source tools/ci.sh && echo "IDF_VER=${IDF_VER}-py${PYTHON_VER}" | tee "$GITHUB_OUTPUT"
