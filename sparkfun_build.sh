@@ -16,6 +16,74 @@ function download_qwiic_release {
     cp -r qwiic-py-py-${LATEST_RELEASE}/lib/* $1
 }
 
+# Creates a frozen data filesystem for micropython using the freezefs python package
+# This will search the qwiic directory for any modules that have data files that need to be frozen via firmware and extracted with boot.py or main.py
+# Options:
+    # $1: Qwiic directory
+    # $2: Output py file of frozen data
+    # $3: Ignored modules (optional, default: none)
+function create_frozen_data_fs {
+    local IGNORED_MODULES=${3:-""}
+    
+    # Add the freezefs python package for creating self-extracting/self-mounting archives for micropython
+    pip install freezefs
+
+    # create our "_frozen_data" directory
+    local FROZEN_DATA_DIR="_frozen_data"
+    mkdir ${FROZEN_DATA_DIR}
+
+    # Iterate over all of the folders in the qwiic directory and check if they have another directory inside them
+    # This represents that they have data files that we need to freeze with freezefs
+    # Ignore the modules passed in the IGNORED_MODULES option
+    for module in $(find $1 -mindepth 1 -maxdepth 1 -type d | grep -vE "${IGNORED_MODULES}"); do
+        # Check if the module has a top-level directory inside it
+        for data_dir in $(find $module -mindepth 1 -maxdepth 1 -type d); do
+            # If it does, we will freeze the data directory
+            echo "Freezing data for module: $data_dir"
+
+            # Copy the data directory to the _frozen_data directory that we will freeze with freezefs
+            # If the data directory name is already used in the _frozen_data directory, we'll prepend the module name to the directory when we copy it
+            if [ -d "${FROZEN_DATA_DIR}/$(basename $data_dir)" ]; then
+                cp -r $data_dir ${FROZEN_DATA_DIR}/$(basename $module)_$(basename $data_dir)
+            else
+                cp -r $data_dir ${FROZEN_DATA_DIR}/$(basename $data_dir)
+            fi
+        done
+    done
+
+    # Now we will use freezefs to create a self-extracting archive from the _frozen_data directory
+    echo "Creating self-extracting archive from ${FROZEN_DATA_DIR}"
+    python -m freezefs ${FROZEN_DATA_DIR} $2
+    if [ $? -ne 0 ]; then
+        echo "Error creating frozen data filesystem. Please check the freezefs documentation for more information."
+        exit 1
+    fi
+}
+
+# Adds the frozen data filesystem to the boot.py file for the given port
+# Options:
+    # $1: Port name
+    # $2: Frozen data file path
+function add_frozen_data_to_boot_for_port {
+    local TARGET_PORT_NAME=$1
+    local FROZEN_DATA_FILE=$2
+
+    # Remove the ".py" extension from the frozen data file
+    local FROZEN_DATA_BASENAME=$(basename $FROZEN_DATA_FILE .py)
+
+    # Check if the _boot.py file exists in the port's modules directory and error out if it does not
+    if [ ! -f ports/${TARGET_PORT_NAME}/modules/_boot.py ]; then
+        echo "Error: _boot.py file not found in ports/${TARGET_PORT_NAME}/modules/"
+        exit 1
+    fi
+
+    # Add the frozen data filesystem to the _boot.py file
+    echo "Adding frozen data filesystem to _boot.py for port ${TARGET_PORT_NAME}"
+    echo "import ${FROZEN_DATA_BASENAME}" >> ports/${TARGET_PORT_NAME}/modules/_boot.py
+    echo "Content of _boot.py after adding frozen data filesystem:"
+    cat ports/${TARGET_PORT_NAME}/modules/_boot.py
+}
+
 # Builds all SparkFun boards for the given port
 # Options:
     # $1: Port name
@@ -150,6 +218,8 @@ function add_qwiic_manifest {
     local BOARD_PREFIX=$3 # The prefix of the SparkFun board directories (e.g. SPARKFUN_)
     local MPCONFIG_FILE="${4:-mpconfigboard.cmake}" # The file to add the frozen manifest line to (e.g. mpconfigboard.cmake or mpconfigboard.mk. )
 
+    echo "Called add_qwiic_manifest with $QWIIC_DIRECTORY, $BOARD_DIRECTORY, $BOARD_PREFIX"
+
     for board in $(find ${BOARD_DIRECTORY} -type d -name "${BOARD_PREFIX}*"); do
         echo "Adding Qwiic drivers to manifest.py for $board"
         if [ ! -f ${board}/manifest.py ]; then
@@ -173,6 +243,8 @@ function add_qwiic_manifest {
 
         echo "Adding freeze line to manifest.py for $board"
         printf "\nfreeze(\"${QWIIC_DIRECTORY}\")" >> ${board}/manifest.py
+
+
 
         echo "Manifest.py for $board:"
         cat ${board}/manifest.py
@@ -228,6 +300,16 @@ function build_sparkfun {
     echo "Downloading Qwiic library and adding to manifest.py for SparkFun boards"
     # Perform Qwiic download 
     download_qwiic_release ${QWIIC_DIRECTORY}
+
+    # Create the frozen (data) filesystem for micropython (for non .py files)
+    # Ignore modules we don't care about the data of (or that have unnecessary files that seem like data files)
+    # For now, we are doing this for only the qwiic_vl53l5cx module to cut down the size for testing
+    create_frozen_data_fs ${QWIIC_DIRECTORY} "${QWIIC_DIRECTORY}/_frozen_qwiic_data.py" "qwiic_vl53l5cx"
+
+    # Add the frozen (data) filesystem to the boot.py file for each port
+    add_frozen_data_to_boot_for_port "esp32" "${QWIIC_DIRECTORY}/_frozen_qwiic_data.py"
+    add_frozen_data_to_boot_for_port "rp2" "${QWIIC_DIRECTORY}/_frozen_qwiic_data.py"
+    add_frozen_data_to_boot_for_port "mimxrt" "${QWIIC_DIRECTORY}/_frozen_qwiic_data.py"
 
     # This is an ugly way to pass the qwiic path. Should make it cleaner than a relative path...
     # Add the downloaded Qwiic drivers to the manifest.py for each esp32 board
