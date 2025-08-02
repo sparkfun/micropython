@@ -1,0 +1,21 @@
+name: Build and Deploy Firmware Release
+
+on:
+  release:
+    types: [created]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    - name: Build Firmware
+      run: source tools/build_red_vision.sh && build_micropython_red_vision
+    - name: Upload Release Assets
+      uses: shogo82148/actions-upload-release-asset@v1
+      with:
+        asset_path: "ports/rp2/build-SPARKFUN_XRP_CONTROLLER-RED_VISION/RED_VISION_MICROPYTHON_SPARKFUN_XRP_CONTROLLER.uf2"
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        upload_url: ${{ github.event.release.upload_url }}
+

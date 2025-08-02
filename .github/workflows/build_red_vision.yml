@@ -1,0 +1,18 @@
+name: Build Firmware
+
+on:
+  pull_request:
+    branches:
+      - red-vision
+  push:
+    branches:
+      - red-vision
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    - name: Build Firmware
+      run: source tools/build_red_vision.sh && build_micropython_red_vision
