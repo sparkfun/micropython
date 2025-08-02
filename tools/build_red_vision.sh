@@ -16,8 +16,6 @@ function build_micropython_red_vision {
     # Set Pico SDK path to $GITHUB_WORKSPACE/micropython/lib/pico-sdk if $GITHUB_WORKSPACE is set, otherwise use the current directory
     if [ -n "$GITHUB_WORKSPACE" ]; then
         export PICO_SDK_PATH="$GITHUB_WORKSPACE/micropython/lib/pico-sdk"
-        # Ensure we're in the micropython directory
-        cd micropython
     else
         export PICO_SDK_PATH=$(dirname "$0")/lib/pico-sdk
     fi
@@ -33,6 +31,9 @@ function build_micropython_red_vision {
 
     # Build OpenCV
     make -C lib/red_vision/micropython-opencv PLATFORM=rp2350 --no-print-directory ${MAKEOPTS}
+
+    # Archive the examples directory
+    python3 -m freezefs lib/red_vision/red_vision_examples lib/red_vision/extract_red_vision_examples.py  --on-import=extract --compress --overwrite always
 
     # Build firmware
     make -C lib/red_vision PORT_DIR=~/micropython/ports/rp2 BOARD=SPARKFUN_XRP_CONTROLLER --no-print-directory ${MAKEOPTS}
