@@ -1,12 +1,10 @@
-name: Build Firmware
+name: Build Red Vision Firmware
 
 on:
   pull_request:
-    branches:
-      - red-vision
   push:
     branches:
-      - red-vision
+      - v1.26.0-preview-beta2
 
 jobs:
   build:

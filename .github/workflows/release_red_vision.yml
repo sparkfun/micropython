@@ -1,4 +1,4 @@
-name: Build and Deploy Firmware Release
+name: Build and Deploy Red Vision Firmware Release
 
 on:
   release:

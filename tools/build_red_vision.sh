@@ -17,7 +17,7 @@ function build_micropython_red_vision {
     # https://stackoverflow.com/a/246128/4783963
     SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
     if [ -n "$GITHUB_WORKSPACE" ]; then
-        export PICO_SDK_PATH="$GITHUB_WORKSPACE/micropython/lib/pico-sdk"
+        export PICO_SDK_PATH="$GITHUB_WORKSPACE/lib/pico-sdk"
     else
         export PICO_SDK_PATH="$SCRIPT_DIR/../lib/pico-sdk"
     fi
