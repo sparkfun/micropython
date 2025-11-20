@@ -471,6 +471,25 @@ void rp2_dma_init(void) {
 }
 
 void rp2_dma_deinit(void) {
+    // Reset all DMA channel registers to their default values.
+    dma_channel_config config = { .ctrl = 0 };
+    for (uint i = 0; i < NUM_DMA_CHANNELS; i++) {
+        dma_channel_configure(
+            i,
+            &config,
+            NULL,
+            NULL,
+            0,
+            false
+            );
+    }
+
+    // Abort all DMA channels. Must be done after clearing EN bits in control
+    // registers due to errata RP2350-E5.
+    for (uint i = 0; i < NUM_DMA_CHANNELS; i++) {
+        dma_channel_abort(i);
+    }
+
     // Remove our interrupt handler.
     irq_remove_handler(DMA_IRQ_0, rp2_dma_irq_handler);
 }
