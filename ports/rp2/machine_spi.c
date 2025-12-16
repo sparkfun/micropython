@@ -261,61 +261,14 @@ static void machine_spi_init(mp_obj_base_t *self_in, size_t n_args, const mp_obj
 
 static void machine_spi_transfer(mp_obj_base_t *self_in, size_t len, const uint8_t *src, uint8_t *dest) {
     machine_spi_obj_t *self = (machine_spi_obj_t *)self_in;
-    // Use DMA for large transfers if channels are available
-    const size_t dma_min_size_threshold = 32;
-    int chan_tx = -1;
-    int chan_rx = -1;
-    if (len >= dma_min_size_threshold) {
-        // Use two DMA channels to service the two FIFOs
-        chan_tx = dma_claim_unused_channel(false);
-        chan_rx = dma_claim_unused_channel(false);
-    }
-    bool use_dma = chan_rx >= 0 && chan_tx >= 0;
+
     // note src is guaranteed to be non-NULL
     bool write_only = dest == NULL;
 
-    if (use_dma) {
-        uint8_t dev_null;
-        dma_channel_config c = dma_channel_get_default_config(chan_tx);
-        channel_config_set_transfer_data_size(&c, DMA_SIZE_8);
-        channel_config_set_dreq(&c, spi_get_index(self->spi_inst) ? DREQ_SPI1_TX : DREQ_SPI0_TX);
-        dma_channel_configure(chan_tx, &c,
-            &spi_get_hw(self->spi_inst)->dr,
-            src,
-            len,
-            false);
-
-        c = dma_channel_get_default_config(chan_rx);
-        channel_config_set_transfer_data_size(&c, DMA_SIZE_8);
-        channel_config_set_dreq(&c, spi_get_index(self->spi_inst) ? DREQ_SPI1_RX : DREQ_SPI0_RX);
-        channel_config_set_read_increment(&c, false);
-        channel_config_set_write_increment(&c, !write_only);
-        dma_channel_configure(chan_rx, &c,
-            write_only ? &dev_null : dest,
-            &spi_get_hw(self->spi_inst)->dr,
-            len,
-            false);
-
-        dma_start_channel_mask((1u << chan_rx) | (1u << chan_tx));
-        dma_channel_wait_for_finish_blocking(chan_rx);
-        dma_channel_wait_for_finish_blocking(chan_tx);
-    }
-
-    // If we have claimed only one channel successfully, we should release immediately
-    if (chan_rx >= 0) {
-        dma_channel_unclaim(chan_rx);
-    }
-    if (chan_tx >= 0) {
-        dma_channel_unclaim(chan_tx);
-    }
-
-    if (!use_dma) {
-        // Use software for small transfers, or if couldn't claim two DMA channels
-        if (write_only) {
-            spi_write_blocking(self->spi_inst, src, len);
-        } else {
-            spi_write_read_blocking(self->spi_inst, src, dest, len);
-        }
+    if (write_only) {
+        spi_write_blocking(self->spi_inst, src, len);
+    } else {
+        spi_write_read_blocking(self->spi_inst, src, dest, len);
     }
 }
 
