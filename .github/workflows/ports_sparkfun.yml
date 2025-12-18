@@ -13,11 +13,11 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: 'micropython repo'
+        working-directory: 'micropython'
     steps:
     - uses: actions/checkout@v4
       with:
-        path: 'micropython repo'
+        path: 'micropython'
     - name: Install RP2 package
       run: source tools/ci.sh && ci_rp2_setup
     # - name: Install mimxrt package # Currently redundant since it does the same arm setup as rp2, but in future if these diverge, uncomment this...
@@ -34,7 +34,7 @@ jobs:
     - name: Upload Release Assets
       uses: shogo82148/actions-upload-release-asset@v1
       with:
-        asset_path: "micropython repo/sparkfun_release/*"
+        asset_path: "micropython/sparkfun_release/*"
         github_token: ${{ secrets.GITHUB_TOKEN }}
         upload_url: ${{ github.event.release.upload_url }}
 

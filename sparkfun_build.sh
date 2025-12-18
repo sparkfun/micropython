@@ -151,10 +151,23 @@ function build_for_port {
         fi
         echo "Building $(basename $board)"
 
+        # Construct make arguments
         BOARD_TO_BUILD=${SPARKFUN_PREFIX}${board#$SPARKFUN_BOARD_PREFIX}
-        make ${MAKEOPTS} -C ports/${TARGET_PORT_NAME} BOARD=$BOARD_TO_BUILD BOARD_VARIANT=$BOARD_VARIANT FROZEN_MANIFEST=$FROZEN_MANIFEST USER_C_MODULES=$USER_C_MODULES clean
-        make ${MAKEOPTS} -C ports/${TARGET_PORT_NAME} BOARD=$BOARD_TO_BUILD BOARD_VARIANT=$BOARD_VARIANT FROZEN_MANIFEST=$FROZEN_MANIFEST USER_C_MODULES=$USER_C_MODULES submodules
-        make ${MAKEOPTS} -C ports/${TARGET_PORT_NAME} BOARD=$BOARD_TO_BUILD BOARD_VARIANT=$BOARD_VARIANT FROZEN_MANIFEST=$FROZEN_MANIFEST USER_C_MODULES=$USER_C_MODULES
+        MAKE_ARGS="-C ports/${TARGET_PORT_NAME} BOARD=$BOARD_TO_BUILD"
+        if [ -n "$BOARD_VARIANT" ]; then
+            MAKE_ARGS+=" BOARD_VARIANT=${BOARD_VARIANT}"
+        fi
+        if [ -n "$FROZEN_MANIFEST" ]; then
+            MAKE_ARGS+=" FROZEN_MANIFEST=${FROZEN_MANIFEST}"
+        fi
+        if [ -n "$USER_C_MODULES" ]; then
+            MAKE_ARGS+=" USER_C_MODULES=${USER_C_MODULES}"
+        fi
+        echo "MAKE_ARGS: ${MAKE_ARGS}"
+
+        make ${MAKE_ARGS} ${MAKEOPTS} clean
+        make ${MAKE_ARGS} ${MAKEOPTS} submodules
+        make ${MAKE_ARGS} ${MAKEOPTS}
     done
 }
 
@@ -302,16 +315,22 @@ function build_micropython_red_vision_rp2 {
     # https://stackoverflow.com/a/246128/4783963
     SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
     if [ -n "$GITHUB_WORKSPACE" ]; then
-        export PICO_SDK_PATH="$GITHUB_WORKSPACE/lib/pico-sdk"
+        export PICO_SDK_PATH="$GITHUB_WORKSPACE/micropython/lib/pico-sdk"
     else
         export PICO_SDK_PATH="$SCRIPT_DIR/lib/pico-sdk"
     fi
 
     # Clone the Red Vision submodule
-    # git submodule update --init --recursive lib/red_vision
+    git submodule update --init --recursive lib/red_vision
+
+    # Clone the Pico SDK submodule
+    git submodule update --init --recursive lib/pico-sdk
 
     # Build OpenCV
     make -C lib/red_vision/micropython-opencv PLATFORM=rp2350 --no-print-directory ${MAKEOPTS}
+
+    # install freezefs if not already installed
+    pip install freezefs
 
     # Archive the examples directory
     python3 -m freezefs lib/red_vision/red_vision_examples lib/red_vision/extract_red_vision_examples.py  --on-import=extract --compress --overwrite always
@@ -420,7 +439,7 @@ function build_sparkfun {
     # Copy all mimxrt teensy binary files to the output directory
     copy_all_for_prefix ${OUTPUT_DIRECTORY} "ports/mimxrt" "build-TEENSY" "firmware" "elf" "${OUTPUT_FILE_PREFIX}TEENSY_" true
 
-    Remove all builds to prepare for Red Vision build
+    # Remove all builds to prepare for Red Vision build
     delete_build_directories_for_port esp32
     delete_build_directories_for_port rp2
     delete_build_directories_for_port mimxrt

@@ -1,0 +1,3 @@
+# Use the base "plus" paritition table - for larger images
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions-4MiBplusplus.csv"
