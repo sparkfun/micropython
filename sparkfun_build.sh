@@ -53,7 +53,7 @@ function create_frozen_data_fs {
 
     # Now we will use freezefs to create a self-extracting archive from the _frozen_data directory
     echo "Creating self-extracting archive from ${FROZEN_DATA_DIR}"
-    python -m freezefs ${FROZEN_DATA_DIR} $2
+    python3 -m freezefs ${FROZEN_DATA_DIR} $2
     if [ $? -ne 0 ]; then
         echo "Error creating frozen data filesystem. Please check the freezefs documentation for more information."
         exit 1
@@ -86,54 +86,84 @@ function add_frozen_data_to_boot_for_port {
 
 # Builds all SparkFun boards for the given port
 # Options:
-    # $1: Port name
-    # $2: [Optional] Prefix for the SparkFun board directories for port(default: "-SPARKFUN_")
+    # -n: Port name
+    # -p: [Optional] Prefix for the SparkFun board directories for port (default: "SPARKFUN_")
+    # -f: [Optional] Frozen manifest file to use (default: none)
+    # -v: [Optional] Board variant to build (default: none)
+    # -m: [Optional] User C modules to include (default: none)
 function build_for_port {
-    local TARGET_PORT_NAME=$1
-    local SPARKFUN_PREFIX=${2:-SPARKFUN_}
+    local TARGET_PORT_NAME
+    local SPARKFUN_PREFIX="SPARKFUN_"
+    local FROZEN_MANIFEST
+    local BOARD_VARIANT
+    local USER_C_MODULES
+
+    OPTIND=1
+    while getopts "n:p:f:v:m:" opt; do
+        echo "Processing option: $opt with argument: $OPTARG"
+        case ${opt} in
+        n )
+            TARGET_PORT_NAME=$OPTARG
+            ;;
+        p )
+            SPARKFUN_PREFIX=$OPTARG
+            ;;
+        f )
+            FROZEN_MANIFEST=$OPTARG
+            ;;
+        v )
+            BOARD_VARIANT=$OPTARG
+            ;;
+        m )
+            USER_C_MODULES=$OPTARG
+            ;;
+        esac
+    done
+
+    echo "TARGET_PORT_NAME: ${TARGET_PORT_NAME}"
+    echo "SPARKFUN_PREFIX: ${SPARKFUN_PREFIX}"
+    echo "FROZEN_MANIFEST: ${FROZEN_MANIFEST}"
+    echo "BOARD_VARIANT: ${BOARD_VARIANT}"
+    echo "USER_C_MODULES: ${USER_C_MODULES}"
+
     local SPARKFUN_BOARD_PREFIX="ports/${TARGET_PORT_NAME}/boards/${SPARKFUN_PREFIX}*"
 
     for board in $SPARKFUN_BOARD_PREFIX; do
+        # If BOARD_VARIANT is set, check if the variant file exists. If not, skip this board.
+        if [ -n "$BOARD_VARIANT" ] && [ ! -f "${board}/mpconfigvariant_${BOARD_VARIANT}.cmake" ]; then
+            echo "Skipping $(basename $board)"
+            continue
+        fi
+        echo "Building $(basename $board)"
+
         BOARD_TO_BUILD=${SPARKFUN_PREFIX}${board#$SPARKFUN_BOARD_PREFIX}
-        make ${MAKEOPTS} -C ports/${TARGET_PORT_NAME} BOARD=$BOARD_TO_BUILD clean
-        make ${MAKEOPTS} -C ports/${TARGET_PORT_NAME} BOARD=$BOARD_TO_BUILD submodules
-        make ${MAKEOPTS} -C ports/${TARGET_PORT_NAME} BOARD=$BOARD_TO_BUILD
+        make ${MAKEOPTS} -C ports/${TARGET_PORT_NAME} BOARD=$BOARD_TO_BUILD BOARD_VARIANT=$BOARD_VARIANT FROZEN_MANIFEST=$FROZEN_MANIFEST USER_C_MODULES=$USER_C_MODULES clean
+        make ${MAKEOPTS} -C ports/${TARGET_PORT_NAME} BOARD=$BOARD_TO_BUILD BOARD_VARIANT=$BOARD_VARIANT FROZEN_MANIFEST=$FROZEN_MANIFEST USER_C_MODULES=$USER_C_MODULES submodules
+        make ${MAKEOPTS} -C ports/${TARGET_PORT_NAME} BOARD=$BOARD_TO_BUILD BOARD_VARIANT=$BOARD_VARIANT FROZEN_MANIFEST=$FROZEN_MANIFEST USER_C_MODULES=$USER_C_MODULES
     done
 }
 
-# Builds all SparkFun RP2 boards (might break into a build_for_port function that we pass the port to later if ESP32 takes the exact same build coms)
+# Builds all SparkFun RP2 boards
 # Options:
-    # $1: Whether to build the cross compiler
+    # See build_for_port function for options
 function build_all_sparkfun_boards_rp2 {
-    if $1; then
-        make ${MAKEOPTS} -C mpy-cross
-    fi
-
-    build_for_port "rp2"
+    build_for_port -n rp2 $@
 }
 
 # Builds all SparkFun ESP32 boards
 # Options:
-    # $1: Whether to build the cross compiler
+    # See build_for_port function for options
 function build_all_sparkfun_boards_esp32 {
     source esp-idf/export.sh
 
-    if $1; then
-        make ${MAKEOPTS} -C mpy-cross
-    fi
-
-    build_for_port "esp32"
+    build_for_port -n esp32 $@
 }
 
 # Builds all Teensy mimxrt boards
 # Options:
-    # $1: Whether to build the cross compiler
+    # See build_for_port function for options
 function build_all_sparkfun_boards_mimxrt {
-    if $1; then
-        make ${MAKEOPTS} -C mpy-cross
-    fi
-
-    build_for_port "mimxrt" "TEENSY"
+    build_for_port -n mimxrt -p TEENSY $@
 }
 
 # Copies all files with the given prefix from the SparkFun build directories to the output directory
@@ -279,14 +309,17 @@ function build_sparkfun {
     echo "OUTPUT_DIRECTORY: ${OUTPUT_DIRECTORY}"
     echo "Performing minimal SparkFun build for ESP32 and RP2"
 
+    # Build the MicroPython cross compiler
+    make ${MAKEOPTS} -C mpy-cross
+
     # Perform minimal build for ESP32
-    build_all_sparkfun_boards_esp32 true
+    build_all_sparkfun_boards_esp32
 
     # Perform minimal build for RP2
-    build_all_sparkfun_boards_rp2 false
+    build_all_sparkfun_boards_rp2
 
     # Perform minimal build for mimxrt
-    build_all_sparkfun_boards_mimxrt false
+    build_all_sparkfun_boards_mimxrt
 
     # Copy all esp32 binary files to the output directory
     copy_all_for_prefix_esp32 ${OUTPUT_DIRECTORY} "ports/esp32" "build-SPARKFUN_" "MINIMAL_${OUTPUT_FILE_PREFIX}"
@@ -325,13 +358,13 @@ function build_sparkfun {
     echo "Performing full SparkFun build for ESP32, RP2, and mimxrt"
     
     # Perform Qwiic Build for ESP32
-    build_all_sparkfun_boards_esp32 false
+    build_all_sparkfun_boards_esp32
 
     # Perform Qwiic Build for RP2
-    build_all_sparkfun_boards_rp2 false
+    build_all_sparkfun_boards_rp2
 
     # Perform Qwiic build for mimxrt
-    build_all_sparkfun_boards_mimxrt false
+    build_all_sparkfun_boards_mimxrt
 
     # Copy all esp32 binary files to the output directory
     copy_all_for_prefix_esp32 ${OUTPUT_DIRECTORY} "ports/esp32" "build-SPARKFUN_" ${OUTPUT_FILE_PREFIX}
