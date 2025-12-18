@@ -84,6 +84,21 @@ function add_frozen_data_to_boot_for_port {
     cat ports/${TARGET_PORT_NAME}/modules/_boot.py
 }
 
+# Deletes all SparkFun build directories for the given port
+# Options:
+    # $1: Port name
+function delete_build_directories_for_port {
+    local TARGET_PORT_NAME=$1
+    echo "TARGET_PORT_NAME: ${TARGET_PORT_NAME}"
+
+    local SPARKFUN_BOARD_PREFIX="ports/${TARGET_PORT_NAME}/build-*"
+
+    for build_dir in $SPARKFUN_BOARD_PREFIX; do
+        echo "Deleting build directory: ${build_dir}"
+        rm -rf ${build_dir}
+    done
+}
+
 # Builds all SparkFun boards for the given port
 # Options:
     # -n: Port name
@@ -281,6 +296,36 @@ function add_qwiic_manifest {
     done
 }
 
+# Builds Red Vision firmware for RP2 boards
+function build_micropython_red_vision_rp2 {
+    # Set Pico SDK path to $GITHUB_WORKSPACE/micropython/lib/pico-sdk if $GITHUB_WORKSPACE is set, otherwise use the current directory
+    # https://stackoverflow.com/a/246128/4783963
+    SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+    if [ -n "$GITHUB_WORKSPACE" ]; then
+        export PICO_SDK_PATH="$GITHUB_WORKSPACE/lib/pico-sdk"
+    else
+        export PICO_SDK_PATH="$SCRIPT_DIR/lib/pico-sdk"
+    fi
+
+    # Clone the Red Vision submodule
+    # git submodule update --init --recursive lib/red_vision
+
+    # Build OpenCV
+    make -C lib/red_vision/micropython-opencv PLATFORM=rp2350 --no-print-directory ${MAKEOPTS}
+
+    # Archive the examples directory
+    python3 -m freezefs lib/red_vision/red_vision_examples lib/red_vision/extract_red_vision_examples.py  --on-import=extract --compress --overwrite always
+
+    # Set CMake arguments for Pico SDK to use MicroPython-OpenCV malloc wrappers
+    # and enable C++ exceptions
+    export CMAKE_ARGS="-DSKIP_PICO_MALLOC=1 -DPICO_CXX_ENABLE_EXCEPTIONS=1"
+
+    build_all_sparkfun_boards_rp2 -f "$SCRIPT_DIR/lib/red_vision/manifest.py" -v "RED_VISION" -m "$SCRIPT_DIR/lib/red_vision/micropython-opencv/micropython_opencv.cmake"
+
+    # Unset CMake arguments to avoid affecting other builds
+    unset CMAKE_ARGS
+}
+
 # Assumes that MAKEOPTS environment variable is set
 # This is designed to be the user-facing function that will build all SparkFun boards
 # Options: 
@@ -374,5 +419,16 @@ function build_sparkfun {
 
     # Copy all mimxrt teensy binary files to the output directory
     copy_all_for_prefix ${OUTPUT_DIRECTORY} "ports/mimxrt" "build-TEENSY" "firmware" "elf" "${OUTPUT_FILE_PREFIX}TEENSY_" true
+
+    Remove all builds to prepare for Red Vision build
+    delete_build_directories_for_port esp32
+    delete_build_directories_for_port rp2
+    delete_build_directories_for_port mimxrt
+
+    # Build Red Vision
+    build_micropython_red_vision_rp2
+
+    # Copy all rp2 binary files to the output directory
+    copy_all_for_prefix ${OUTPUT_DIRECTORY} "ports/rp2" "build-SPARKFUN_" "firmware" "uf2" "RED_VISION_${OUTPUT_FILE_PREFIX}"
 }
 
