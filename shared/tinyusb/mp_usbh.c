@@ -138,6 +138,10 @@ bool mp_usbh_is_active(void) {
     return mp_usbh_active;
 }
 
+bool mp_usbh_port_connected(void) {
+    return mp_usbh_active && hcd_port_connect_status(TUH_OPT_RHPORT);
+}
+
 static void mp_usbh_control_xfer_cb(tuh_xfer_t *xfer) {
     mp_usbh_ctrl_len = xfer->actual_len;
     mp_usbh_ctrl_result = xfer->result;

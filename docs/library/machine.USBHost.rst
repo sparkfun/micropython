@@ -97,11 +97,17 @@ Example::
 
     cam.stop()
 
-.. class:: USBHost.UVC(*, timeout=3000)
+.. class:: USBHost.UVC(*, timeout=5000)
 
    Return the object for the attached camera, waiting up to ``timeout`` milliseconds
    for one to be attached and enumerated.  Raises ``OSError(ENODEV)`` if there is no
    camera.  The host must be active.
+
+   Enumeration occasionally fails part-way, with the camera no longer responding.  So
+   if a device has been connected for 1.5 seconds without becoming a camera, the host
+   is restarted, which turns the port's power off for 100ms if the board can switch it,
+   and enumeration starts again.  This also happens if the connected device isn't a
+   camera, so other devices on the host may be reset while waiting.
 
    .. note:: This object is a singleton, each call to this constructor
              returns the same object reference.

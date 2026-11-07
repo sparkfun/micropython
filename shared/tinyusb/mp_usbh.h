@@ -55,6 +55,9 @@ bool mp_usbh_init(void);
 void mp_usbh_deinit(void);
 bool mp_usbh_is_active(void);
 
+// Whether a device is connected to the root port.
+bool mp_usbh_port_connected(void);
+
 // Run the TinyUSB host task.  Must be called from thread context.
 void mp_usbh_task(void);
 

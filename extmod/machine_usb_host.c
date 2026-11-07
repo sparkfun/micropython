@@ -39,6 +39,11 @@
 // The singleton USB host object, and the singleton UVC camera object, on top of the
 // TinyUSB host stack (see shared/tinyusb/mp_usbh.c).
 
+// How long a connected device may take to become a camera before the host is
+// restarted, and how long the port is then left unpowered.
+#define UVC_ENUM_RETRY_MS (1500)
+#define UVC_POWER_OFF_MS (100)
+
 typedef struct _mp_obj_usb_host_t {
     mp_obj_base_t base;
 } mp_obj_usb_host_t;
@@ -121,7 +126,7 @@ static void uvc_check_streaming(void) {
 static mp_obj_t usb_host_uvc_make_new(const mp_obj_type_t *type, size_t n_args, size_t n_kw, const mp_obj_t *all_args) {
     enum { ARG_timeout };
     static const mp_arg_t allowed_args[] = {
-        { MP_QSTR_timeout, MP_ARG_KW_ONLY | MP_ARG_INT, {.u_int = 3000} },
+        { MP_QSTR_timeout, MP_ARG_KW_ONLY | MP_ARG_INT, {.u_int = 5000} },
     };
     mp_arg_val_t args[MP_ARRAY_SIZE(allowed_args)];
     mp_arg_parse_all_kw_array(n_args, n_kw, all_args, MP_ARRAY_SIZE(allowed_args), allowed_args, args);
@@ -130,15 +135,29 @@ static mp_obj_t usb_host_uvc_make_new(const mp_obj_type_t *type, size_t n_args, 
         mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("USB host not active"));
     }
 
-    // Wait for a camera to be attached and enumerated.
+    // Wait for a camera to be attached and enumerated.  Enumeration sometimes fails
+    // part-way, with the camera no longer responding, so if a device has been connected
+    // for a while without a camera appearing, restart the host to reset it.
     mp_uint_t t0 = mp_hal_ticks_ms();
+    mp_uint_t t_connected = t0;
     for (;;) {
         mp_usbh_task();
         if (mp_usbh_uvc_daddr() != 0) {
             break;
         }
-        if (mp_hal_ticks_ms() - t0 >= (mp_uint_t)args[ARG_timeout].u_int) {
+        mp_uint_t t = mp_hal_ticks_ms();
+        if (t - t0 >= (mp_uint_t)args[ARG_timeout].u_int) {
             mp_raise_OSError(MP_ENODEV);
+        }
+        if (!mp_usbh_port_connected()) {
+            t_connected = t;
+        } else if (t - t_connected >= UVC_ENUM_RETRY_MS) {
+            mp_usbh_deinit();
+            mp_hal_delay_ms(UVC_POWER_OFF_MS);
+            if (!mp_usbh_init()) {
+                mp_raise_OSError(MP_EIO);
+            }
+            t_connected = mp_hal_ticks_ms();
         }
         mp_event_wait_ms(5);
     }
