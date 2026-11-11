@@ -101,6 +101,10 @@
 #include "shared/tinyusb/mp_usbd.h"
 #endif
 
+#if MICROPY_HW_USB_HOST
+#include "shared/tinyusb/mp_usbh.h"
+#endif
+
 #if MICROPY_PY_THREAD
 static pyb_thread_t pyb_thread_main;
 #endif
@@ -332,6 +336,12 @@ static void risaf_init(void) {
     #if MICROPY_PY_NPU
     HAL_RIF_RIMC_ConfigMasterAttributes(RIF_MASTER_INDEX_NPU, &rimc_master);
     #endif
+    #if MICROPY_HW_USB_HOST
+    HAL_RIF_RIMC_ConfigMasterAttributes(MICROPY_HW_USB_HOST_RHPORT == 0 ? RIF_MASTER_INDEX_OTG1 : RIF_MASTER_INDEX_OTG2, &rimc_master);
+    #endif
+    #if MICROPY_PY_JPEG
+    HAL_RIF_RIMC_ConfigMasterAttributes(RIF_MASTER_INDEX_DMA2D, &rimc_master);
+    #endif
 
     HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_ADC12, RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV);
     HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_SDMMC1, RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV);
@@ -339,6 +349,12 @@ static void risaf_init(void) {
     HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_ETH1, RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV);
     #if MICROPY_PY_NPU
     HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_NPU, RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV);
+    #endif
+    #if MICROPY_HW_USB_HOST
+    HAL_RIF_RISC_SetSlaveSecureAttributes(MICROPY_HW_USB_HOST_RHPORT == 0 ? RIF_RISC_PERIPH_INDEX_OTG1HS : RIF_RISC_PERIPH_INDEX_OTG2HS, RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV);
+    #endif
+    #if MICROPY_PY_JPEG
+    HAL_RIF_RISC_SetSlaveSecureAttributes(RIF_RISC_PERIPH_INDEX_DMA2D, RIF_ATTRIBUTE_SEC | RIF_ATTRIBUTE_PRIV);
     #endif
 }
 #endif
@@ -810,6 +826,9 @@ soft_reset_exit:
     #endif
     #if MICROPY_PY_NPU
     npu_deinit();
+    #endif
+    #if MICROPY_HW_USB_HOST
+    mp_usbh_deinit();
     #endif
     soft_timer_deinit();
     timer_deinit();
