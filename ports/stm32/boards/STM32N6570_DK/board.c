@@ -28,10 +28,11 @@
 #include "boardctrl.h"
 #include "xspi.h"
 
-// Values for OTP fuses for VDDIO3, to select low voltage mode (<2.5V).
+// Values for OTP fuses for VDDIO2/3, to select low voltage mode (<2.5V).
 // See RM0486, Section 5, Table 18.
 #define BSEC_HW_CONFIG_ID       (124U)
 #define BSEC_HWS_HSLV_VDDIO3    (1U << 15)
+#define BSEC_HWS_HSLV_VDDIO2    (1U << 16)
 
 // Select the VDDCORE SMPS's overdrive voltage (PF4 high), which the 800MHz CPU clock needs.
 // Inlined so that it runs from RAM in board_leave_standby().
@@ -72,9 +73,12 @@ static void board_config_vdd(void) {
     // Enable Vdd ADC, needed for the ADC to work.
     LL_PWR_EnableVddADC();
 
-    // Configure VDDIO2.
+    // Configure VDDIO2, which supplies the 1.8V PSRAM.  Only enable 1.8V mode if the fuse
+    // is set (the PSRAM driver programs it).
     LL_PWR_EnableVddIO2();
-    LL_PWR_SetVddIO2VoltageRange(LL_PWR_VDDIO_VOLTAGE_RANGE_3V3);
+    if (fuse & BSEC_HWS_HSLV_VDDIO2) {
+        LL_PWR_SetVddIO2VoltageRange(LL_PWR_VDDIO_VOLTAGE_RANGE_1V8);
+    }
     SYSCFG->VDDIO2CCCR |= SYSCFG_VDDIO2CCCR_EN; // enable IO compensation
 
     // Configure VDDIO3.  Only enable 1.8V mode if the fuse is set.
@@ -116,9 +120,8 @@ void board_leave_standby(void) {
     LL_APB4_GRP2_EnableClock(LL_APB4_GRP2_PERIPH_SYSCFG);
     board_vddcore_overdrive();
 
-    // Configure VDDIO2.
+    // Configure VDDIO2 (1.8V mode selection is retained).
     LL_PWR_EnableVddIO2();
-    LL_PWR_SetVddIO2VoltageRange(LL_PWR_VDDIO_VOLTAGE_RANGE_3V3);
     SYSCFG->VDDIO2CCCR |= SYSCFG_VDDIO2CCCR_EN; // enable IO compensation
 
     // Configure VDDIO3 (1.8V mode selection is retained).

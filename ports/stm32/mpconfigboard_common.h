@@ -724,9 +724,19 @@ void mp_usbd_ll_init(void);
 #define MICROPY_HW_SPIFLASH_ENABLE_CACHE (0)
 #endif
 
+// Whether to enable external 16-bit PSRAM on XSPI.
+#ifndef MICROPY_HW_XSPI_PSRAM
+#define MICROPY_HW_XSPI_PSRAM (0)
+#endif
+
 // How much PSRAM, at its top, to reserve for the npu module's models.
 #ifndef MICROPY_HW_NPU_PSRAM_SIZE
 #define MICROPY_HW_NPU_PSRAM_SIZE (16 * 1024 * 1024)
+#endif
+
+// PSRAM requires a split heap to be used with the GC.
+#if MICROPY_HW_XSPI_PSRAM && !defined(MICROPY_GC_SPLIT_HEAP)
+#define MICROPY_GC_SPLIT_HEAP (1)
 #endif
 
 // Enable the storage sub-system if a block device is defined
