@@ -516,6 +516,9 @@ void stm32_main(uint32_t reset_mode) {
     #endif
     #if MICROPY_HW_XSPI_PSRAM
     size_t psram_size = xspi_psram_init();
+    #if MICROPY_PY_NPU
+    psram_size = npu_psram_reserve(psram_size);
+    #endif
     #endif
     #if MICROPY_PY_THREAD
     pyb_thread_init(&pyb_thread_main);
